@@ -2,200 +2,192 @@ import java.util.Scanner;
 
 public class LauncherTracker {
     private final TrackerTime trackerTime;
-    private Action typeAction;
-    private boolean isWork;
-    private final Scanner scr = new Scanner(System.in);
+    private boolean isWorking;
+    private final Scanner scanner;
 
-    public LauncherTracker(){
-        this.isWork = true;
+    public LauncherTracker() {
+        this.isWorking = true;
         this.trackerTime = new TrackerTime();
-        this.trackerTime.autoLoadIfEnabled();
+        this.scanner = new Scanner(System.in);
     }
 
-    private void menu(){
+    private void displayMenu() {
         System.out.println("""
-                "=== Трекер времени ==="
+                === Трекер времени ===
                 1. Показать учёт времени
                 2. Добавить учёт времени
-                3. Сохранить список учёта
-                4. Загрузить список учёта
-                5. Показать статистику времени
-                6. Настройки программы
-                7. Выйти
+                3. Добавить своё действие
+                4. Сохранить список учёта
+                5. Загрузить список учёта
+                6. Показать статистику времени
+                7. Настройки программы
+                8. Выйти
                 """);
     }
 
-    private void inputAction() {
-        String response = scr.nextLine();
-        switch (response){
-            case "1" -> btnShowTracker();
-            case "2" -> btnAddTracker();
-            case "3" -> btnSaveList();
-            case "4" -> btnLoadList();
-            case "5" -> btnShowAnalise();
-            case "6" -> btnSettings();
-            case "7" -> btnExit();
+    private void handleUserInput() {
+        System.out.print("Выберите действие: ");
+        String response = scanner.nextLine().trim();
+
+        switch (response) {
+            case "1" -> showTracker();
+            case "2" -> addTracker();
+            case "3" -> addCustomAction();
+            case "4" -> saveList();
+            case "5" -> loadList();
+            case "6" -> showAnalysis();
+            case "7" -> showSettings();
+            case "8" -> exit();
             default -> {
                 System.out.println("Неверный ввод. Попробуйте снова.");
-                menu();
+                displayMenu();
             }
         }
     }
 
-    private void btnShowTracker(){
+    private void showTracker() {
         String title = "=== Учёт времени ===";
         System.out.println(title);
         trackerTime.printTracker();
         System.out.println("=".repeat(title.length()));
-        backMenu();
+        returnToMenu();
     }
 
-    private void addTrackerById() {
-        System.out.print("Укажите ID времени: ");
-        int id = scr.nextInt();
-        scr.nextLine();
-
-        System.out.println("Доступные действия:");
-        for (Action action : Action.getAllActions()) {
-            System.out.println("- " + action.getDisplayName());
-        }
-
-        System.out.print("Укажите тип действий: ");
-        String typeInput = scr.nextLine();
-
-        Action action = getActionFromInput(typeInput);
-
-        trackerTime.setMapAction(id, action);
-        System.out.println("Вы установили - "
-                + action.getDisplayName()
-                + " на "
-                + trackerTime.getMapTime(id)
-                + "\n");
+    private void addTracker() {
+        String title = "=== Добавление времени к учёту ===";
+        System.out.println(title);
+        askAddMethod();
+        System.out.println("=".repeat(title.length()));
+        returnToMenu();
     }
 
-    private Action getActionFromInput(String typeInput) {
-
-        Action action = Action.findActionName(typeInput);
-
-        if (action == null) {
-            switch (typeInput.trim().toUpperCase()) {
-                case "СОН" -> action = Action.SLEEP;
-                case "РАБОТА" -> action = Action.WORK;
-                case "УЧЁБА", "УЧЁБА JAVA" -> action = Action.LEARNING;
-                case "ТРЕНИРОВКА" -> action = Action.TRAINING;
-                default -> action = Action.NULL;
-            }
-        }
-
-        return action;
-    }
-
-    private void addTrackerByRangeId(){
-        System.out.print("Укажите начальный ID времени: ");
-        int startTime = scr.nextInt();
-
-        System.out.print("Укажите конечный ID времени: ");
-        int endTime = scr.nextInt();
-
-        scr.nextLine();
-
-        System.out.print("Укажите тип действий (Сон, работа, учёба, тренировка): ");
-        String typeInput = scr.nextLine();
-
-        switch (typeInput.trim().toUpperCase()){
-            case "СОН" -> typeAction = Action.SLEEP;
-            case "РАБОТА" ->  typeAction = Action.WORK;
-            case "УЧЁБА" -> typeAction = Action.LEARNING;
-            case "ТРЕНИРОВКА" -> typeAction = Action.TRAINING;
-            default -> typeAction = Action.NULL;
-        }
-
-        trackerTime.setMapAction(typeAction, startTime, endTime);
-
-        System.out.println("Вы установили - "
-                + typeInput
-                + " в диапозоне: от "
-                + trackerTime.getMapTime(startTime)
-                + " до "
-                + trackerTime.getMapTime(endTime)
-                + "(включительно)\n");
-        backMenu();
-    }
-
-    private void questionsAddTracker(){
+    private void askAddMethod() {
         System.out.println("""
                 1. Установить по одному ID
-                2. Установить по диапозону ID""");
-        String response = scr.nextLine();
-        switch (response){
+                2. Установить по диапазону ID""");
+        System.out.print("Ваш выбор: ");
+        String response = scanner.nextLine().trim();
+
+        switch (response) {
             case "1" -> addTrackerById();
             case "2" -> addTrackerByRangeId();
             default -> {
                 System.out.println("Неверный выбор.");
-                questionsAddTracker();
+                askAddMethod();
             }
         }
     }
 
-    private void btnAddTracker(){
-        String title = "=== Добавление времени к учёту ===";
-        System.out.println(title);
-        questionsAddTracker();
-        System.out.println("=".repeat(title.length()));
-        backMenu();
+    private void addTrackerById() {
+        System.out.print("Укажите ID времени (0-47): ");
+
+        try {
+            int id = Integer.parseInt(scanner.nextLine().trim());
+
+            System.out.println("Доступные действия:");
+            for (Action action : Action.getAllActions()) {
+                System.out.println("- " + action.getDisplayName());
+            }
+
+            System.out.print("Укажите действие: ");
+            String actionInput = scanner.nextLine().trim();
+
+            Action action = Action.findActionName(actionInput);
+            if (action == null) {
+                action = Action.NULL;
+                System.out.println("Действие не найдено. Установлено 'Свободно'");
+            }
+
+            trackerTime.setMapAction(id, action);
+            System.out.printf("Вы установили '%s' на %s%n%n",
+                    action.getDisplayName(),
+                    trackerTime.getMapTime(id));
+        } catch (NumberFormatException e) {
+            System.out.println("Ошибка: введите число от 0 до 47");
+        } catch (IllegalArgumentException e) {
+            System.out.println("Ошибка: " + e.getMessage());
+        }
     }
 
-    private void btnSaveList() {
+    private void addTrackerByRangeId() {
+        try {
+            System.out.print("Укажите начальный ID времени (0-47): ");
+            int startTime = Integer.parseInt(scanner.nextLine().trim());
+
+            System.out.print("Укажите конечный ID времени (0-47): ");
+            int endTime = Integer.parseInt(scanner.nextLine().trim());
+
+            System.out.println("Доступные действия:");
+            for (Action action : Action.getAllActions()) {
+                System.out.println("- " + action.getDisplayName());
+            }
+
+            System.out.print("Укажите действие: ");
+            String actionInput = scanner.nextLine().trim();
+
+            Action action = Action.findActionName(actionInput);
+            if (action == null) {
+                action = Action.NULL;
+                System.out.println("Действие не найдено. Установлено 'Свободно'");
+            }
+
+            trackerTime.setMapAction(action, startTime, endTime);
+            System.out.printf("Вы установили '%s' в диапазоне: от %s до %s (включительно)%n%n",
+                    action.getDisplayName(),
+                    trackerTime.getMapTime(startTime),
+                    trackerTime.getMapTime(endTime));
+        } catch (NumberFormatException e) {
+            System.out.println("Ошибка: введите число от 0 до 47");
+        } catch (IllegalArgumentException e) {
+            System.out.println("Ошибка: " + e.getMessage());
+        }
+    }
+
+    private void addCustomAction() {
+        trackerTime.addCustomAction(scanner);
+        returnToMenu();
+    }
+
+    private void saveList() {
         trackerTime.saveTracker();
-        menu();
+        displayMenu();
     }
 
-    private void btnLoadList(){
+    private void loadList() {
         trackerTime.loadTracker();
-        menu();
+        displayMenu();
     }
 
-    private void btnShowAnalise(){
+    private void showAnalysis() {
         String title = "=== Статистика времени ===";
         System.out.println(title);
         trackerTime.showAnalise();
         System.out.println("=".repeat(title.length()));
-        backMenu();
+        returnToMenu();
     }
 
-    private void btnSettings(){
-        String title = "=== Настройки программы ===";
-        System.out.println(title);
-        String listMenu = """
-                1. Уставить разделитель
-                2. Добавить свой тип действия
-                3. Загружать автоматически сохранённый учёт времени
-                4. Сохранить пользовательские типы "Дествия"
-                """;
-        System.out.println(listMenu);
-        System.out.print("Выберите действие");
-        trackerTime.setSettings();
-        System.out.println("=".repeat(title.length()));
-        backMenu();
+    private void showSettings() {
+        trackerTime.showSettingsMenu();
+        displayMenu();
     }
 
-    private void btnExit(){
+    private void exit() {
         System.out.println("Выход из программы...");
-        this.isWork = false;
+        this.isWorking = false;
     }
 
-    private void backMenu(){
-        System.out.print("Выберите дейсвтие (0 - выход):");
-        scr.nextLine();
-        menu();
+    private void returnToMenu() {
+        System.out.print("Нажмите Enter для возврата в меню...");
+        scanner.nextLine();
+        displayMenu();
     }
 
-    public void start(){
-        menu();
-        while(isWork){
-            inputAction();
+    public void start() {
+        displayMenu();
+        while (isWorking) {
+            handleUserInput();
         }
         System.out.println("Программа завершена.");
-        scr.close();
+        scanner.close();
     }
 }

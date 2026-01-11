@@ -4,122 +4,147 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class TrackerTime {
-    private char splitter;
-    private boolean autoLoadEnabled = false;
+    private static final int TOTAL_SLOTS = 48;
+    private static final int MINUTES_PER_SLOT = 30;
+    private static final String TRACKER_FILE = "TrackerList.txt";
+    private static final String SETTINGS_FILE = "settings.dat";
 
+    private AppSettings settings;
     private final Map<Integer, LocalTime> mapTime;
     private final Map<Integer, Action> mapAction;
 
-    public TrackerTime(){
+    public TrackerTime() {
         this.mapTime = new TreeMap<>();
         this.mapAction = new TreeMap<>();
-        this.splitter = ',';
-        setMapTime();
+        this.settings = loadSettings();
+        initializeTimeSlots();
+        autoLoadIfEnabled();
     }
 
-    private void setMapTime() {
-        for (int count = 0; count < 48; count++) {
+    public AppSettings getSettings() {
+        return settings;
+    }
+
+    private void initializeTimeSlots() {
+        for (int count = 0; count < TOTAL_SLOTS; count++) {
             int hour = count / 2;
-            int minute = (count % 2) * 30;
+            int minute = (count % 2) * MINUTES_PER_SLOT;
             mapTime.put(count, LocalTime.of(hour, minute));
         }
     }
 
-    public void printTracker(){
-        System.out.println("ID" + "\t|\t" + "Часы" + "\t|\t" + "Действия\t|");
-        for(int i = 0; i < mapTime.size(); i++){
-            String result = String.valueOf(mapTime.get(i));
-            String type = mapAction.get(i) != null ?
-                    mapAction.get(i).getDisplayName() : Action.NULL.getDisplayName();
-            System.out.println(i + "\t|\t" + result + "\t|\t" + type + "\t|");
+    public void printTracker() {
+        String header = "ID\t|\tЧасы\t|\tДействия\t|";
+        System.out.println(header);
+
+        for (int i = 0; i < mapTime.size(); i++) {
+            String time = mapTime.get(i).toString();
+            String actionName = getActionAtSlot(i).getDisplayName();
+            System.out.println(i + "\t|\t" + time + "\t|\t" + actionName + "\t|");
         }
     }
 
-    public void saveTracker() {
-        try(PrintWriter writer = new PrintWriter(new FileWriter("TrackerList.txt"))) {
-            writer.println("=== Учёт времени ===");
-            writer.printf("ID%cЧасы%cДействия%cActionID%n", splitter, splitter, splitter);
+    private Action getActionAtSlot(int slot) {
+        return mapAction.getOrDefault(slot, Action.NULL);
+    }
 
-            for(int i = 0; i < mapTime.size(); i++) {
-                String time = String.valueOf(mapTime.get(i));
-                Action action = mapAction.get(i) != null ?
-                        mapAction.get(i) : Action.NULL;
+    public void saveTracker() {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(TRACKER_FILE))) {
+            writer.println("=== Учёт времени ===");
+            writer.printf("ID%cЧасы%cДействия%cActionID%n",
+                    settings.getSplitter(),
+                    settings.getSplitter(),
+                    settings.getSplitter());
+
+            for (int i = 0; i < mapTime.size(); i++) {
+                String time = mapTime.get(i).toString();
+                Action action = getActionAtSlot(i);
 
                 writer.printf("%d%c%s%c%s%c%s%n",
-                        i, splitter,
-                        time, splitter,
-                        action.getDisplayName(), splitter,
+                        i, settings.getSplitter(),
+                        time, settings.getSplitter(),
+                        action.getDisplayName(), settings.getSplitter(),
                         action.getId());
             }
-            System.out.println("=== Данные успешно сохранены в TrackerList.txt ===");
-        } catch (Exception e) {
+
+            System.out.println("=== Данные успешно сохранены в " + TRACKER_FILE + " ===");
+        } catch (IOException e) {
             System.out.println("Ошибка при сохранении файла: " + e.getMessage());
         }
     }
 
     public void loadTracker() {
-        try (BufferedReader br = new BufferedReader(new FileReader("TrackerList.txt"))) {
+        File file = new File(TRACKER_FILE);
+        if (!file.exists()) {
+            System.out.println("Файл " + TRACKER_FILE + " не найден.");
+            return;
+        }
+
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            br.readLine();
+            br.readLine();
+
             String line;
-            br.readLine();
-            br.readLine();
+            int loadedCount = 0;
 
-            while((line = br.readLine()) != null) {
-                String[] parts = line.split(String.valueOf(splitter));
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(String.valueOf(settings.getSplitter()));
 
-                if(parts.length >= 4) {
+                if (parts.length >= 4) {
                     try {
                         int id = Integer.parseInt(parts[0].trim());
                         String actionId = parts[3].trim();
 
-                        Action action = Action.getAction(actionId);
-                        if (action == null) {
-                            action = Action.NULL;
+                        if (id >= 0 && id < TOTAL_SLOTS) {
+                            Action action = Action.getAction(actionId);
+                            if (action != null) {
+                                mapAction.put(id, action);
+                                loadedCount++;
+                            }
                         }
-
-                        mapAction.put(id, action);
                     } catch (NumberFormatException ignored) {
-
                     }
                 }
             }
-            System.out.println("=== Данные успешно загружены из TrackerList.txt ===");
-        } catch (FileNotFoundException e) {
-            System.out.println("Файл не найден. Будет создан новый при сохранении.");
+
+            System.out.println("=== Загружено " + loadedCount + " записей из " + TRACKER_FILE + " ===");
         } catch (IOException e) {
             System.out.println("Ошибка при загрузке файла: " + e.getMessage());
         }
     }
 
-    public void setMapAction(int id, Action typeAction){
-        if(id < 0 || id > mapTime.size()-1)
-            throw new IllegalArgumentException("Время должно быть в диапозоне 0-" + (mapTime.size()-1));
+    public void setMapAction(int id, Action typeAction) {
+        validateSlotId(id);
         mapAction.put(id, typeAction);
     }
 
-    public void setMapAction(Action typeAction, int startTime, int endTime){
-        if(startTime < 0 || endTime < 0 || startTime >= mapTime.size() || endTime >= mapTime.size()){
-            throw new IllegalArgumentException("Время должно быть в диапозоне 0-" + (mapTime.size()-1));
-        }
+    public void setMapAction(Action typeAction, int startTime, int endTime) {
+        validateSlotId(startTime);
+        validateSlotId(endTime);
 
-        if(startTime <= endTime){
-            for (int i = startTime; i <= endTime; i++){
+        if (startTime <= endTime) {
+            for (int i = startTime; i <= endTime; i++) {
                 mapAction.put(i, typeAction);
             }
-        }else{
-            int maxId = mapTime.size();
-            for(int i = startTime; i < maxId; i++){
+        } else {
+            for (int i = startTime; i < TOTAL_SLOTS; i++) {
                 mapAction.put(i, typeAction);
             }
-            for(int i = 0; i <= endTime; i++){
+            for (int i = 0; i <= endTime; i++) {
                 mapAction.put(i, typeAction);
             }
         }
     }
 
-    public String getMapTime(int id){
-        String result;
-        result = String.valueOf(mapTime.get(id));
-        return result;
+    private void validateSlotId(int id) {
+        if (id < 0 || id >= TOTAL_SLOTS) {
+            throw new IllegalArgumentException("ID должен быть в диапазоне 0-" + (TOTAL_SLOTS - 1));
+        }
+    }
+
+    public String getMapTime(int id) {
+        validateSlotId(id);
+        return mapTime.get(id).toString();
     }
 
     public void showAnalise() {
@@ -127,26 +152,34 @@ public class TrackerTime {
         int count = 1;
 
         for (Action action : Action.getAllActions()) {
-            long totalMinutes = calculateTotalTimesForAction(action);
+            List<TimeInterval> intervals = getIntervalsForAction(action);
 
-            if (totalMinutes > 0) {
+            if (!intervals.isEmpty()) {
+                long totalMinutes = intervals.stream()
+                        .mapToLong(TimeInterval::getDurationInMinutes)
+                        .sum();
+
                 System.out.printf("%d. %-15s | Всего: %d час. %d мин.%n",
                         count++,
                         action.getDisplayName(),
                         totalMinutes / 60,
                         totalMinutes % 60);
 
-                showIntervalsForAction(action);
+                intervals.forEach(interval ->
+                        System.out.printf("   %s - %s%n",
+                                interval.getStartTime(),
+                                interval.getEndTime()));
             }
         }
     }
 
-    private void showIntervalsForAction(Action action) {
+    private List<TimeInterval> getIntervalsForAction(Action action) {
+        List<TimeInterval> intervals = new ArrayList<>();
         boolean inInterval = false;
         int intervalStart = -1;
 
-        for (int i = 0; i < mapTime.size(); i++) {
-            Action current = mapAction.get(i) != null ? mapAction.get(i) : Action.NULL;
+        for (int i = 0; i < TOTAL_SLOTS; i++) {
+            Action current = getActionAtSlot(i);
 
             if (current.equals(action)) {
                 if (!inInterval) {
@@ -155,115 +188,176 @@ public class TrackerTime {
                 }
             } else {
                 if (inInterval) {
-                    System.out.printf("   %s - %s%n",
+                    intervals.add(new TimeInterval(
                             mapTime.get(intervalStart),
-                            mapTime.get(i - 1));
+                            mapTime.get(i - 1)
+                    ));
                     inInterval = false;
                 }
             }
         }
 
         if (inInterval) {
-            System.out.printf("   %s - %s%n",
+            intervals.add(new TimeInterval(
                     mapTime.get(intervalStart),
-                    mapTime.get(mapTime.size() - 1));
+                    mapTime.get(TOTAL_SLOTS - 1)
+            ));
         }
+
+        return intervals;
     }
 
-    private long calculateTotalTimesForAction(Action action) {
-        long totalSlots = 0;
+    private AppSettings loadSettings() {
+        File settingsFile = new File(SETTINGS_FILE);
 
-        for(int i = 0; i < mapTime.size(); i++) {
-            Action current = mapAction.get(i) != null ? mapAction.get(i) : Action.NULL;
-            if(current.equals(action)) {
-                totalSlots++;
+        if (settingsFile.exists()) {
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(settingsFile))) {
+                AppSettings loadedSettings = (AppSettings) ois.readObject();
+                System.out.println("Настройки успешно загружены");
+                return loadedSettings;
+            } catch (IOException | ClassNotFoundException e) {
+                System.out.println("Ошибка загрузки настроек. Загружены настройки по умолчанию");
             }
+        } else {
+            System.out.println("Файл настроек не найден. Создан новый файл настроек по умолчанию");
         }
 
-        return totalSlots * 30;
+        return new AppSettings();
     }
 
-    public void setSettings(){
+    public void showSettingsMenu() {
         Scanner scr = new Scanner(System.in);
-        String input = scr.nextLine();
-        switch (input){
-            case "1" -> {
-                String inputChar = scr.nextLine().strip();
-                char splitterInput = inputChar.charAt(0);
-                setSplitter(splitterInput);
-            }
-            case "2" -> addCustomAction(scr);
-            case "3" -> {
-                System.out.print("Хотите установить автозагрузку ваших данных (да/нет): ");
-                String response = scr.nextLine();
-                boolean flag = false;
-                switch (response){
-                    case "да" -> {
-                        flag = true;
-                        System.out.println("Вы успешно установили значение автозагрузки - да");
-                    }
-                    case "нет" -> {
-                        flag = false;
-                        System.out.println("Вы успешно установили значение автозагрузки - да");
-                    }
-                    default -> {
-                        System.out.println("Выбрать да или нет.");
-                    }
+
+        while (true) {
+            System.out.println("\n=== НАСТРОЙКИ ПРОГРАММЫ ===");
+            System.out.println("Текущие настройки:");
+            System.out.println("1. Разделитель CSV: '" + settings.getSplitter() + "'");
+            System.out.println("2. Автозагрузка данных: " + (settings.isAutoLoadEnabled() ? "ВКЛ" : "ВЫКЛ"));
+            System.out.println("3. Формат даты: " + settings.getDateFormat());
+            System.out.println("\nДействия:");
+            System.out.println("4. Изменить разделитель");
+            System.out.println("5. Включить/выключить автозагрузку");
+            System.out.println("6. Изменить формат даты");
+            System.out.println("7. Сохранить настройки");
+            System.out.println("8. Сбросить к настройкам по умолчанию");
+            System.out.println("0. Выйти в главное меню");
+            System.out.print("\nВыберите действие: ");
+
+            String choice = scr.nextLine().trim();
+
+            switch (choice) {
+                case "4" -> changeSplitter(scr);
+                case "5" -> toggleAutoLoad();
+                case "6" -> changeDateFormat(scr);
+                case "7" -> saveSettings();
+                case "8" -> resetToDefaultSettings();
+                case "0" -> {
+                    return;
                 }
-                setFlagAutoload(flag);
-            }
-            case "4" -> saveCustomActions();
-        }
-    }
-
-    private void setSplitter(char newSplitter) {
-        switch (newSplitter) {
-            case ',', ';', '\'', '|', ':' -> {
-                this.splitter = newSplitter;
-                System.out.println("Вы успешно установили разделитель - '" + newSplitter + "'");
-            }
-            default -> {
-                System.out.println("Неверный знак разделителя. Установлен по умолчанию ','");
-                this.splitter = ',';
+                default -> System.out.println("Неверный выбор.");
             }
         }
     }
 
-    private void addCustomAction(Scanner scr){
+    private void changeSplitter(Scanner scr) {
+        System.out.print("Укажите новый разделитель (один символ): ");
+        String input = scr.nextLine().trim();
+
+        if (input.length() == 1) {
+            settings.setSplitter(input.charAt(0));
+            System.out.println("Разделитель изменен на: '" + input.charAt(0) + "'");
+        } else {
+            System.out.println("Ошибка: нужно указать один символ");
+        }
+    }
+
+    public void addCustomAction(Scanner scr) {
         System.out.print("Введите название нового действия: ");
         String actionName = scr.nextLine();
-        try{
-            Action newAction = Action.createCustomActions(actionName);
-            System.out.println("Действие " + actionName + " было успешно добавлено");
-        } catch (IllegalArgumentException e){
+
+        try {
+            Action newAction = Action.createCustomAction(actionName);
+            Action.saveCustomActions();
+            System.out.println("Действие '" + actionName + "' было успешно добавлено");
+        } catch (IllegalArgumentException e) {
             System.out.println("Ошибка: " + e.getMessage());
         }
     }
 
-    private void setFlagAutoload(boolean flag) {
-        this.autoLoadEnabled = flag;
-        System.out.println("Автозагрузка " + (flag ? "включена" : "выключена"));
+    private void toggleAutoLoad() {
+        boolean currentFlag = settings.isAutoLoadEnabled();
+        settings.setAutoLoadEnabled(!currentFlag);
+        System.out.println("Автозагрузка данных теперь: " +
+                (settings.isAutoLoadEnabled() ? "Включена" : "Выключена"));
     }
 
-    public void autoLoadIfEnabled() {
-        if (autoLoadEnabled) {
-            File file = new File("TrackerList.txt");
-            if (file.exists()) {
-                loadTracker();
+    private void changeDateFormat(Scanner scr) {
+        System.out.println("Доступные форматы даты:");
+        System.out.println("1. dd.MM.yyyy (день.месяц.год)");
+        System.out.println("2. yyyy-MM-dd (год-месяц-день)");
+        System.out.println("3. MM/dd/yyyy (месяц/день/год)");
+        System.out.print("Выберите формат: ");
+
+        String choice = scr.nextLine().trim();
+        switch (choice) {
+            case "1" -> {
+                settings.setDateFormat("dd.MM.yyyy");
+                System.out.println("Формат даты изменен на: dd.MM.yyyy");
             }
+            case "2" -> {
+                settings.setDateFormat("yyyy-MM-dd");
+                System.out.println("Формат даты изменен на: yyyy-MM-dd");
+            }
+            case "3" -> {
+                settings.setDateFormat("MM/dd/yyyy");
+                System.out.println("Формат даты изменен на: MM/dd/yyyy");
+            }
+            default -> System.out.println("Неверный выбор. Формат не изменен.");
         }
     }
 
-    public void saveCustomActions() {
-        try (ObjectOutputStream oos = new ObjectOutputStream(
-                new FileOutputStream("custom_actions.dat"))) {
+    public void autoLoadIfEnabled() {
+        if (settings.isAutoLoadEnabled()) {
+            loadTracker();
+        }
+    }
 
-            List<Action> customActions = Action.getAllActions().stream()
-                    .filter(Action::isCustom)
-                    .collect(Collectors.toList());
-            oos.writeObject(customActions);
+    private void saveSettings() {
+        try (ObjectOutputStream oos = new ObjectOutputStream(
+                new FileOutputStream(SETTINGS_FILE))) {
+            oos.writeObject(settings);
+            System.out.println("Настройки успешно сохранены");
         } catch (IOException e) {
-            System.out.println("Не удалось сохранить пользовательские действия");
+            System.out.println("Ошибка сохранения настроек: " + e.getMessage());
+        }
+    }
+
+    private void resetToDefaultSettings() {
+        this.settings = new AppSettings();
+        saveSettings();
+        System.out.println("Настройки сброшены к значениям по умолчанию");
+    }
+
+    private static class TimeInterval {
+        private final LocalTime start;
+        private final LocalTime end;
+
+        TimeInterval(LocalTime start, LocalTime end) {
+            this.start = start;
+            this.end = end;
+        }
+
+        LocalTime getStartTime() {
+            return start;
+        }
+
+        LocalTime getEndTime() {
+            return end;
+        }
+
+        long getDurationInMinutes() {
+            return (end.getHour() * 60L + end.getMinute()) -
+                    (start.getHour() * 60L + start.getMinute()) + MINUTES_PER_SLOT;
         }
     }
 }
